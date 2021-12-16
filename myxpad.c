@@ -76,6 +76,64 @@
  */
 
 
+#include <linux/kernel.h>
+#include <linux/errno.h>
+#include <linux/slab.h>
+#include <linux/module.h>
+#include <linux/kref.h>
+#include <linux/uaccess.h>
+#include <linux/usb.h>
+#include <linux/mutex.h>
+#include <linux/input.h>
+#include <linux/stat.h>
+#include <linux/usb/input.h>
+#include <linux/rcupdate.h>
+
+// T:  Bus=03 Lev=01 Prnt=01 Port=01 Cnt=01 Dev#=  7 Spd=12  MxCh= 0
+// D:  Ver= 2.00 Cls=ff(vend.) Sub=ff Prot=ff MxPS= 8 #Cfgs=  1
+// P:  Vendor=046d ProdID=c21d Rev=40.14
+// S:  Manufacturer=Logitech
+// S:  Product=Gamepad F310
+// S:  SerialNumber=E10C8732
+// C:  #Ifs= 1 Cfg#= 1 Atr=80 MxPwr=500mA
+// I:  If#=0x0 Alt= 0 #EPs= 2 Cls=ff(vend.) Sub=5d Prot=01 Driver=gamepad
+#define USB_GAMEPAD_VENDOR_ID	0x046d
+#define USB_GAMEPAD_PRODUCT_ID	0xc21d
+#define USB_GAMEPAD_NAME "Gamepad F310"
+
+//data[3]
+#define BUTTON_A 0x10
+#define BUTTON_B 0x20
+#define BUTTON_X 0x40
+#define BUTTON_Y 0x80
+
+//data[2]
+#define BUTTON_UP 		0x01
+#define BUTTON_DOWN 	0x02
+#define BUTTON_LEFT 	0x04
+#define BUTTON_RIGHT	0x08
+
+//data[2]
+#define BUTTON_SELECT 	0x20
+#define BUTTON_START	0x10
+#define BUTTON_MODE		0x04
+
+//data[3]
+#define BUTTON_L1 	0x01
+#define BUTTON_R1	0x02
+
+//data[2]
+#define BUTTON_L3 	0x40
+#define BUTTON_R3	0x80
+
+#define GAMEPAD_PKT_LEN 64
+#define USB_GAMEPAD_MINOR_BASE	192
+#define MAX_TRANSFER (PAGE_SIZE - 512)
+#define WRITES_IN_FLIGHT 8
+
+
+
+
 #include <linux/fs.h>
 #include <asm/segment.h>
 #include <asm/uaccess.h>
@@ -275,6 +333,35 @@ static const signed short xpad_abs_triggers[] = {
 	-1
 };
 
+
+
+static const signed short gamepad_buttons[] = {
+	BTN_LEFT, BTN_RIGHT, BTN_MIDDLE, BTN_SIDE,
+	KEY_ESC, KEY_LEFTCTRL, KEY_LEFTALT,
+	KEY_PAGEDOWN, KEY_PAGEUP,
+	KEY_LEFTSHIFT, KEY_ENTER,	
+	-1 };
+
+static const signed short directional_buttons[] = {
+	KEY_LEFT, KEY_RIGHT,		/* d-pad left, right */
+	KEY_UP, KEY_DOWN,		/* d-pad up, down */
+	-1 };
+
+static const signed short trigger_buttons[] = {
+	BTN_TL2, BTN_TR2,		/* triggers left/right */
+	-1 };
+
+static const signed short trigger_bumpers[] = {
+	ABS_Z, ABS_RZ,		/* triggers left/right */
+	-1 };
+
+static const signed short gamepad_abs[] = {
+	ABS_X, ABS_Y, 		/* left stick */
+	ABS_RX,	ABS_WHEEL,	/* right stick */
+	-1 };
+
+
+
 /*
  * Xbox 360 has a vendor-specific class, so we cannot match it with only
  * USB_INTERFACE_INFO (also specifically refused by USB subsystem), so we
@@ -435,36 +522,6 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
  *		http://www.free60.org/wiki/Gamepad
  */
 
-
-static void write_coords2(int x, int y)
-{
-	char buffer[64];
-    //Open the sysfs coordinate node
-	struct file *f = filp_open("/sys/devices/platform/vms/coordinates", O_RDWR, 0);
-	if (!f || IS_ERR(f))
-	{
-		f = NULL;
-		printk("Couldn't open vms coordinate file");
-	}
-
-	//Generate random relative coordinates
-	x = x % 100;
-	y = y % 100;
-
-	//Convey simulated coordinates to the virtual mouse driver
-	sprintf(buffer, "%d %d %d", x, y, 0);
-	//vfs_write(f, buffer, strlen(buffer), 0);
-	kernel_write(f, buffer, strlen(buffer), 0);
-	//fsync(sim_fd);
-    filp_close(f, NULL);
-    
-}
-
-static void write_coords(int x, int y)
-{
-	printk("Coords: %d %d", x, y);  
-} 
-
 static void xpad360_process_packet(struct usb_xpad *xpad,
 				   u16 cmd, unsigned char *data)
 {
@@ -511,13 +568,6 @@ static void xpad360_process_packet(struct usb_xpad *xpad,
 
 		int x = (int) le16_to_cpup((__le16 *)(data + 6));
 		int y = (int) le16_to_cpup((__le16 *)(data + 8));
-
-		if (prev_x != x || prev_y != y)
-		{
-			write_coords(x, y);
-			prev_x = x;
-			prev_y = y;
-		}
 
 		/* right stick */
 		input_report_abs(dev, ABS_RX,
@@ -676,13 +726,14 @@ static void xpadone_process_packet(struct usb_xpad *xpad,
 static void xpad_irq_in(struct urb *urb)
 {
 	printk("Check6.\n");
+	unsigned char *data = urb->transfer_buffer;
 	struct usb_xpad *xpad = urb->context;
-	struct device *dev = &xpad->intf->dev;
-	int retval, status;
+	struct input_dev *dev = xpad->dev;
+	//struct device *dev = &xpad->intf->dev;
 
-	status = urb->status;
+	int retval;
 
-	switch (status) {
+	switch (urb->status) {
 	case 0:
 		/* success */
 		break;
@@ -690,34 +741,71 @@ static void xpad_irq_in(struct urb *urb)
 	case -ENOENT:
 	case -ESHUTDOWN:
 		/* this urb is terminated, clean up */
-		dev_dbg(dev, "%s - urb shutting down with status: %d\n",
-			__func__, status);
+		printk("%s - urb shutting down with status: %d", __func__, urb->status);
 		return;
 	default:
-		dev_dbg(dev, "%s - nonzero urb status received: %d\n",
-			__func__, status);
+		printk("%s - nonzero urb status received: %d", __func__, urb->status);
 		goto exit;
 	}
 
-	switch (xpad->xtype) {
-	case XTYPE_XBOX360:
-		xpad360_process_packet(xpad, 0, xpad->idata);
-		break;
-	case XTYPE_XBOX360W:
-		xpad360w_process_packet(xpad, 0, xpad->idata);
-		break;
-	case XTYPE_XBOXONE:
-		xpadone_process_packet(xpad, 0, xpad->idata);
-		break;
-	default:
-		xpad_process_packet(xpad, 0, xpad->idata);
-	}
+	printk("");
+	int i;
+	printk(KERN_CONT "array cells: ");
+	for (i = 0; i < urb->actual_length; ++i)
+		printk(KERN_CONT " %i:%02x ", i, data[i]);
+	printk("");
+
+	// printk(KERN_CONT "memory: ");
+	// for (i = 0; i < urb->actual_length; ++i)
+	// 	printk(KERN_CONT " %i:%02x ", i, (__s16) le16_to_cpup((__le16 *)(data + i)));
+	// printk("");
+
+	input_report_key(dev, KEY_LEFT, data[2] & BUTTON_LEFT);
+	input_report_key(dev, KEY_RIGHT, data[2] & BUTTON_RIGHT);
+	input_report_key(dev, KEY_UP, data[2] & BUTTON_UP);
+	input_report_key(dev, KEY_DOWN, data[2] & BUTTON_DOWN);
+
+	input_report_key(dev, BTN_LEFT,  data[3] & BUTTON_A);
+	input_report_key(dev, BTN_LEFT,  data[3] & BUTTON_B);
+	input_report_key(dev, BTN_LEFT,  data[3] & BUTTON_X);
+	input_report_key(dev, BTN_LEFT,  data[3] & BUTTON_Y);
+	input_report_key(dev, KEY_LEFTSHIFT, data[3] & BUTTON_L1);
+	input_report_key(dev, KEY_ENTER, data[3] & BUTTON_R1);
+	
+	/* start/back buttons */
+	input_report_key(dev, KEY_ESC,  data[2] & BUTTON_START);
+	input_report_key(dev, KEY_LEFTCTRL, data[2] & BUTTON_SELECT);
+	input_report_key(dev, KEY_LEFTALT, data[3] & BUTTON_MODE);
+
+	/* stick press left/right */
+	input_report_key(dev, KEY_PAGEDOWN, data[2] & BUTTON_L3);
+	input_report_key(dev, KEY_PAGEUP, data[2] & BUTTON_R3);
+
+	//digital bumpers
+	// input_report_key(dev, BTN_TL2, data[4]);
+	// input_report_key(dev, BTN_TR2, data[5]);
+
+	//analog bumpers
+	// input_report_abs(dev, ABS_VOLUME, data[4]);
+	// input_report_abs(dev, ABS_VOLUME, data[5]);
+
+	/* left stick */
+	input_report_rel(dev, REL_X, (__s16) le16_to_cpup((__le16 *)(data + 6))/2048);
+	input_report_rel(dev, REL_Y, ~(__s16) le16_to_cpup((__le16 *)(data + 8))/2048);
+
+	/* right stick */
+	input_report_rel(dev, REL_HWHEEL, (__s16) le16_to_cpup((__le16 *)(data + 10))/4096);
+	// input_report_rel(dev, REL_WHEEL, ~(__s16) le16_to_cpup((__le16 *)(data + 12)));
+	input_report_rel(dev, ABS_WHEEL, ~(__s16) le16_to_cpup((__le16 *)(data + 12))/4096);
+	//input_report_abs(dev, ABS_RX, (__s16) le16_to_cpup((__le16 *)(data + 10)));
+	//input_report_abs(dev, ABS_RY, ~(__s16) le16_to_cpup((__le16 *)(data + 12)));
+
+	input_sync(dev);
 
 exit:
 	retval = usb_submit_urb(urb, GFP_ATOMIC);
 	if (retval)
-		dev_err(dev, "%s - usb_submit_urb failed with result %d\n",
-			__func__, retval);
+		dev_err(&urb->dev->dev, "%s - Error %d submitting interrupt urb\n", __func__, retval);
 }
 
 static void xpad_bulk_out(struct urb *urb)
@@ -1199,6 +1287,15 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 			xpad_set_up_abs(input_dev, xpad_abs_triggers[i]);
 	}
 
+	for (i = 0; gamepad_buttons[i] >= 0; i++)
+		input_set_capability(input_dev, EV_KEY, gamepad_buttons[i]);
+
+	for (i = 0; directional_buttons[i] >= 0; i++)
+		input_set_capability(input_dev, EV_KEY, directional_buttons[i]);
+
+	for (i = 0; gamepad_abs[i] >= 0; i++)
+		input_set_capability(input_dev, EV_REL, gamepad_abs[i]);
+
 	error = xpad_init_output(intf, xpad);
 	if (error)
 		goto fail3;
@@ -1335,6 +1432,7 @@ static struct usb_driver xpad_driver = {
 	.probe		= xpad_probe,
 	.disconnect	= xpad_disconnect,
 	.id_table	= xpad_table,
+	.supports_autosuspend = 1,
 };
 
 module_usb_driver(xpad_driver);
