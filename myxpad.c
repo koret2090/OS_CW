@@ -89,17 +89,6 @@
 #include <linux/usb/input.h>
 #include <linux/rcupdate.h>
 
-// T:  Bus=03 Lev=01 Prnt=01 Port=01 Cnt=01 Dev#=  7 Spd=12  MxCh= 0
-// D:  Ver= 2.00 Cls=ff(vend.) Sub=ff Prot=ff MxPS= 8 #Cfgs=  1
-// P:  Vendor=046d ProdID=c21d Rev=40.14
-// S:  Manufacturer=Logitech
-// S:  Product=Gamepad F310
-// S:  SerialNumber=E10C8732
-// C:  #Ifs= 1 Cfg#= 1 Atr=80 MxPwr=500mA
-// I:  If#=0x0 Alt= 0 #EPs= 2 Cls=ff(vend.) Sub=5d Prot=01 Driver=gamepad
-#define USB_GAMEPAD_VENDOR_ID	0x046d
-#define USB_GAMEPAD_PRODUCT_ID	0xc21d
-#define USB_GAMEPAD_NAME "Gamepad F310"
 
 //data[3]
 #define BUTTON_A 0x10
@@ -148,7 +137,7 @@
 #define DRIVER_AUTHOR "Daniil"
 #define DRIVER_DESC "My X-Box pad driver"
 
-#define XPAD_PKT_LEN 32
+#define XPAD_PKT_LEN 64
 
 int prev_x, prev_y;
 
@@ -336,10 +325,10 @@ static const signed short xpad_abs_triggers[] = {
 
 
 static const signed short gamepad_buttons[] = {
-	BTN_LEFT, BTN_RIGHT, BTN_MIDDLE, BTN_SIDE,
+	KEY_KP5, KEY_F10, BTN_MIDDLE, BTN_SIDE,
 	KEY_ESC, KEY_LEFTCTRL, KEY_LEFTALT,
 	KEY_PAGEDOWN, KEY_PAGEUP,
-	KEY_LEFTSHIFT, KEY_ENTER,	
+	KEY_LEFTSHIFT, KEY_ENTER, KEY_RIGHTSHIFT	
 	-1 };
 
 static const signed short directional_buttons[] = {
@@ -725,7 +714,6 @@ static void xpadone_process_packet(struct usb_xpad *xpad,
 
 static void xpad_irq_in(struct urb *urb)
 {
-	printk("Check6.\n");
 	unsigned char *data = urb->transfer_buffer;
 	struct usb_xpad *xpad = urb->context;
 	struct input_dev *dev = xpad->dev;
@@ -747,13 +735,14 @@ static void xpad_irq_in(struct urb *urb)
 		printk("%s - nonzero urb status received: %d", __func__, urb->status);
 		goto exit;
 	}
-
+	/*
 	printk("");
 	int i;
 	printk(KERN_CONT "array cells: ");
 	for (i = 0; i < urb->actual_length; ++i)
 		printk(KERN_CONT " %i:%02x ", i, data[i]);
 	printk("");
+	*/
 
 	// printk(KERN_CONT "memory: ");
 	// for (i = 0; i < urb->actual_length; ++i)
@@ -764,14 +753,16 @@ static void xpad_irq_in(struct urb *urb)
 	input_report_key(dev, KEY_RIGHT, data[2] & BUTTON_RIGHT);
 	input_report_key(dev, KEY_UP, data[2] & BUTTON_UP);
 	input_report_key(dev, KEY_DOWN, data[2] & BUTTON_DOWN);
+	
 
-	input_report_key(dev, BTN_LEFT,  data[3] & BUTTON_A);
-	input_report_key(dev, BTN_LEFT,  data[3] & BUTTON_B);
-	input_report_key(dev, BTN_LEFT,  data[3] & BUTTON_X);
-	input_report_key(dev, BTN_LEFT,  data[3] & BUTTON_Y);
+	input_report_key(dev, KEY_KP5,  data[3] & BUTTON_A);
+	input_report_key(dev, BTN_RIGHT,  data[3] & BUTTON_B);
+	//input_report_key(dev, BTN_MIDDLE,  data[3] & BTN_X);
+	//input_report_key(dev, BTN_SIDE,  data[3] & BTN_Y);
 	input_report_key(dev, KEY_LEFTSHIFT, data[3] & BUTTON_L1);
 	input_report_key(dev, KEY_ENTER, data[3] & BUTTON_R1);
 	
+	printk(KERN_INFO "+ %d", data[3] & BUTTON_A);
 	/* start/back buttons */
 	input_report_key(dev, KEY_ESC,  data[2] & BUTTON_START);
 	input_report_key(dev, KEY_LEFTCTRL, data[2] & BUTTON_SELECT);
@@ -794,16 +785,13 @@ static void xpad_irq_in(struct urb *urb)
 	input_report_rel(dev, REL_Y, ~(__s16) le16_to_cpup((__le16 *)(data + 8))/2048);
 
 	/* right stick */
-	input_report_rel(dev, REL_HWHEEL, (__s16) le16_to_cpup((__le16 *)(data + 10))/4096);
-	// input_report_rel(dev, REL_WHEEL, ~(__s16) le16_to_cpup((__le16 *)(data + 12)));
-	input_report_rel(dev, ABS_WHEEL, ~(__s16) le16_to_cpup((__le16 *)(data + 12))/4096);
-	//input_report_abs(dev, ABS_RX, (__s16) le16_to_cpup((__le16 *)(data + 10)));
-	//input_report_abs(dev, ABS_RY, ~(__s16) le16_to_cpup((__le16 *)(data + 12)));
+	input_report_rel(dev, REL_HWHEEL, (__s16) le16_to_cpup((__le16 *)(data + 10))/8192);
+	input_report_rel(dev, ABS_WHEEL, ~(__s16) le16_to_cpup((__le16 *)(data + 12))/8192);
 
 	input_sync(dev);
 
 exit:
-	retval = usb_submit_urb(urb, GFP_ATOMIC);
+	retval = usb_submit_urb(urb, GFP_KERNEL);
 	if (retval)
 		dev_err(&urb->dev->dev, "%s - Error %d submitting interrupt urb\n", __func__, retval);
 }
@@ -1166,8 +1154,6 @@ static void xpad_set_up_abs(struct input_dev *input_dev, signed short abs)
 static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id)
 {
 	printk("My XPAD is Connected");
-	prev_x = 0;
-	prev_y = 0;
 
 	struct usb_device *udev = interface_to_usbdev(intf);
 	struct usb_xpad *xpad;
@@ -1260,6 +1246,9 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	/* set up standard buttons */
 	for (i = 0; xpad_common_btn[i] >= 0; i++)
 		__set_bit(xpad_common_btn[i], input_dev->keybit);
+
+	//__set_bit(EV_KEY, input_dev->keybit);
+	//__set_bit(KEY_KP5, input_dev->keybit);
 
 	/* set up model-specific ones */
 	if (xpad->xtype == XTYPE_XBOX360 || xpad->xtype == XTYPE_XBOX360W ||
@@ -1399,6 +1388,8 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
  fail2:	usb_free_coherent(udev, XPAD_PKT_LEN, xpad->idata, xpad->idata_dma);
  fail1:	input_free_device(input_dev);
 	kfree(xpad);
+
+	printk(KERN_ALERT "ABOBA");
 	return error;
 
 }
