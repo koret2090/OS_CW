@@ -325,10 +325,10 @@ static const signed short xpad_abs_triggers[] = {
 
 
 static const signed short gamepad_buttons[] = {
-	KEY_KP5, KEY_F10, BTN_MIDDLE, BTN_SIDE,
+	KEY_KP5, BTN_RIGHT, BTN_MIDDLE, BTN_SIDE,
 	KEY_ESC, KEY_LEFTCTRL, KEY_LEFTALT,
 	KEY_PAGEDOWN, KEY_PAGEUP,
-	KEY_LEFTSHIFT, KEY_ENTER, KEY_RIGHTSHIFT	
+	KEY_LEFTSHIFT, KEY_ENTER,	
 	-1 };
 
 static const signed short directional_buttons[] = {
