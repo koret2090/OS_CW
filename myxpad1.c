@@ -196,7 +196,6 @@ struct usb_xpad {
 	unsigned char *idata;		/* input data */
 	dma_addr_t idata_dma;
 
-	struct urb *bulk_out;
 	unsigned char *bdata;
 
 	struct urb *irq_out;		/* urb for interrupt out report */
@@ -277,29 +276,6 @@ exit:
 	retval = usb_submit_urb(urb, GFP_KERNEL);
 	if (retval)
 		dev_err(&urb->dev->dev, "%s - Error %d submitting interrupt urb\n", __func__, retval);
-}
-
-static void xpad_bulk_out(struct urb *urb)
-{
-	printk("Check7.\n");
-	struct usb_xpad *xpad = urb->context;
-	struct device *dev = &xpad->intf->dev;
-
-	switch (urb->status) {
-	case 0:
-		/* success */
-		break;
-	case -ECONNRESET:
-	case -ENOENT:
-	case -ESHUTDOWN:
-		/* this urb is terminated, clean up */
-		dev_dbg(dev, "%s - urb shutting down with status: %d\n",
-			__func__, urb->status);
-		break;
-	default:
-		dev_dbg(dev, "%s - nonzero urb status received: %d\n",
-			__func__, urb->status);
-	}
 }
 
 static void xpad_irq_out(struct urb *urb)
@@ -574,7 +550,6 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	return 0;
 
  fail9:	kfree(xpad->bdata);
- fail8:	usb_free_urb(xpad->bulk_out);
  fail7:	input_unregister_device(input_dev);
 	input_dev = NULL;
  fail5:	if (input_dev)
