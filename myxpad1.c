@@ -34,7 +34,7 @@
 #define WRITES_IN_FLIGHT 8
 
 #define DRIVER_AUTHOR "Suslikov Daniil"
-#define DRIVER_DESC "My  Gamepad driver"
+#define DRIVER_DESC "My Gamepad Driver"
 
 #define XPAD_PKT_LEN 64
 
@@ -48,8 +48,6 @@
 
 #define XTYPE_XBOX        0
 #define XTYPE_XBOX360     1
-#define XTYPE_XBOX360W    2
-#define XTYPE_XBOXONE     3
 #define XTYPE_UNKNOWN     4
 
 static bool dpad_to_buttons;
@@ -364,7 +362,6 @@ static int xpad_init_output(struct usb_interface *intf, struct usb_xpad *xpad)
 	}
 
 	/* Xbox One controller has in/out endpoints swapped. */
-	ep_irq_out_idx = xpad->xtype == XTYPE_XBOXONE ? 0 : 1;
 	ep_irq_out = &intf->cur_altsetting->endpoint[ep_irq_out_idx].desc;
 
 	usb_fill_int_urb(xpad->irq_out, xpad->udev,
@@ -399,21 +396,9 @@ static int xpad_open(struct input_dev *dev)
 {
 	struct usb_xpad *xpad = input_get_drvdata(dev);
 
-	/* URB was submitted in probe */
-	if (xpad->xtype == XTYPE_XBOX360W)
-		return 0;
-
 	xpad->irq_in->dev = xpad->udev;
 	if (usb_submit_urb(xpad->irq_in, GFP_KERNEL))
 		return -EIO;
-
-	if (xpad->xtype == XTYPE_XBOXONE) {
-		/* Xbox one controller needs to be initialized. */
-		xpad->odata[0] = 0x05;
-		xpad->odata[1] = 0x20;
-		xpad->irq_out->transfer_buffer_length = 2;
-		return usb_submit_urb(xpad->irq_out, GFP_KERNEL);
-	}
 
 	return 0;
 }
@@ -421,10 +406,6 @@ static int xpad_open(struct input_dev *dev)
 static void xpad_close(struct input_dev *dev)
 {
 	struct usb_xpad *xpad = input_get_drvdata(dev);
-
-	if (xpad->xtype != XTYPE_XBOX360W)
-		usb_kill_urb(xpad->irq_in);
-
 	xpad_stop_output(xpad);
 }
 
@@ -443,10 +424,7 @@ static void xpad_set_up_abs(struct input_dev *input_dev, signed short abs)
 		break;
 	case ABS_Z:
 	case ABS_RZ:	/* the triggers (if mapped to axes) */
-		if (xpad->xtype == XTYPE_XBOXONE)
-			input_set_abs_params(input_dev, abs, 0, 1023, 0, 0);
-		else
-			input_set_abs_params(input_dev, abs, 0, 255, 0, 0);
+		input_set_abs_params(input_dev, abs, 0, 255, 0, 0);
 		break;
 	case ABS_HAT0X:
 	case ABS_HAT0Y:	/* the d-pad (only if dpad is mapped to axes */
@@ -470,11 +448,6 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 		if ((le16_to_cpu(udev->descriptor.idVendor) == xpad_device[i].idVendor) &&
 		    (le16_to_cpu(udev->descriptor.idProduct) == xpad_device[i].idProduct))
 			break;
-	}
-
-	if (xpad_device[i].xtype == XTYPE_XBOXONE &&
-	    intf->cur_altsetting->desc.bInterfaceNumber != 0) {
-		return -ENODEV;
 	}
 
 	xpad = kzalloc(sizeof(struct usb_xpad), GFP_KERNEL);
@@ -505,8 +478,6 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	if (xpad->xtype == XTYPE_UNKNOWN) {
 		if (intf->cur_altsetting->desc.bInterfaceClass == USB_CLASS_VENDOR_SPEC) {
 			if (intf->cur_altsetting->desc.bInterfaceProtocol == 129)
-				xpad->xtype = XTYPE_XBOX360W;
-			else
 				xpad->xtype = XTYPE_XBOX360;
 		} else
 			xpad->xtype = XTYPE_XBOX;
@@ -547,8 +518,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 		__set_bit(xpad_common_btn[i], input_dev->keybit);
 
 	/* set up model-specific ones */
-	if (xpad->xtype == XTYPE_XBOX360 || xpad->xtype == XTYPE_XBOX360W ||
-	    xpad->xtype == XTYPE_XBOXONE) {
+	if (xpad->xtype == XTYPE_XBOX360) {
 		for (i = 0; xpad360_btn[i] >= 0; i++)
 			__set_bit(xpad360_btn[i], input_dev->keybit);
 	} else {
@@ -586,7 +556,6 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 		goto fail3;
 
 	/* Xbox One controller has in/out endpoints swapped. */
-	ep_irq_in_idx = xpad->xtype == XTYPE_XBOXONE ? 1 : 0;
 	ep_irq_in = &intf->cur_altsetting->endpoint[ep_irq_in_idx].desc;
 
 	usb_fill_int_urb(xpad->irq_in, udev,
@@ -626,12 +595,6 @@ static void xpad_disconnect(struct usb_interface *intf)
 
 	input_unregister_device(xpad->dev);
 	xpad_deinit_output(xpad);
-
-	if (xpad->xtype == XTYPE_XBOX360W) {
-		usb_kill_urb(xpad->bulk_out);
-		usb_free_urb(xpad->bulk_out);
-		usb_kill_urb(xpad->irq_in);
-	}
 
 	usb_free_urb(xpad->irq_in);
 	usb_free_coherent(xpad->udev, XPAD_PKT_LEN,
