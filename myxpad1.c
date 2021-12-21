@@ -210,6 +210,7 @@ struct usb_xpad {
 
 static void xpad_irq_in(struct urb *urb)
 {
+	printk("+ irq in");
 	unsigned char *data = urb->transfer_buffer;
 	struct usb_xpad *xpad = urb->context;
 	struct input_dev *dev = xpad->dev;
@@ -281,7 +282,7 @@ static void xpad_irq_in(struct urb *urb)
 
 static void xpad_irq_out(struct urb *urb)
 {
-	printk("Check8.\n");
+	printk("+ irq out.\n");
 	struct usb_xpad *xpad = urb->context;
 	struct device *dev = &xpad->intf->dev;
 	int retval, status;
@@ -314,6 +315,7 @@ static void xpad_irq_out(struct urb *urb)
 
 static int xpad_init_output(struct usb_interface *intf, struct usb_xpad *xpad)
 {
+	printk("+ init output");
 	struct usb_endpoint_descriptor *ep_irq_out;
 	int ep_irq_out_idx;
 	int error;
@@ -337,7 +339,6 @@ static int xpad_init_output(struct usb_interface *intf, struct usb_xpad *xpad)
 		return error;
 	}
 
-	/* Xbox One controller has in/out endpoints swapped. */
 	ep_irq_out = &intf->cur_altsetting->endpoint[ep_irq_out_idx].desc;
 
 	usb_fill_int_urb(xpad->irq_out, xpad->udev,
@@ -352,8 +353,7 @@ static int xpad_init_output(struct usb_interface *intf, struct usb_xpad *xpad)
 
 static void xpad_stop_output(struct usb_xpad *xpad)
 {
-	if (xpad->xtype != XTYPE_UNKNOWN)
-		usb_kill_urb(xpad->irq_out);
+	usb_kill_urb(xpad->irq_out);
 }
 
 static void xpad_deinit_output(struct usb_xpad *xpad)
@@ -367,6 +367,7 @@ static void xpad_deinit_output(struct usb_xpad *xpad)
 
 static int xpad_open(struct input_dev *dev)
 {
+	printk("+ Gamepad is opened");
 	struct usb_xpad *xpad = input_get_drvdata(dev);
 
 	xpad->irq_in->dev = xpad->udev;
@@ -378,6 +379,7 @@ static int xpad_open(struct input_dev *dev)
 
 static void xpad_close(struct input_dev *dev)
 {
+	printk("+ Closing");
 	struct usb_xpad *xpad = input_get_drvdata(dev);
 	xpad_stop_output(xpad);
 }
@@ -540,7 +542,6 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 		return error;
 	}
 
-	/* Xbox One controller has in/out endpoints swapped. */
 	ep_irq_in = &intf->cur_altsetting->endpoint[ep_irq_in_idx].desc;
 
 	usb_fill_int_urb(xpad->irq_in, udev,
@@ -569,10 +570,11 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 
 static void xpad_disconnect(struct usb_interface *intf)
 {
+	printk("+ Gamepad is disconnected");
 	struct usb_xpad *xpad = usb_get_intfdata (intf);
 
 	input_unregister_device(xpad->dev);
-	xpad_deinit_output(xpad);
+	xpad_deinit_output(xpad);									
 
 	usb_free_urb(xpad->irq_in);
 	usb_free_coherent(xpad->udev, XPAD_PKT_LEN,
@@ -589,7 +591,6 @@ static struct usb_driver xpad_driver = {
 	.probe		= xpad_probe,
 	.disconnect	= xpad_disconnect,
 	.id_table	= xpad_table,
-	.supports_autosuspend = 1,
 };
 
 module_usb_driver(xpad_driver);
