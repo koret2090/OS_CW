@@ -2,7 +2,6 @@
 #include <linux/module.h>
 #include <linux/usb/input.h>
 
-
 //data[3]
 #define BUTTON_A 0x10
 #define BUTTON_B 0x20
@@ -229,7 +228,10 @@ static void xpad_irq_in(struct urb *urb)
 		return;
 	default:
 		printk("%s - nonzero urb status received: %d", __func__, urb->status);
-		goto exit;
+		retval = usb_submit_urb(urb, GFP_KERNEL);
+		if (retval)
+			dev_err(&urb->dev->dev, "%s - Error %d submitting interrupt urb\n", __func__, retval);
+			return;
 	}
 
 	input_report_key(dev, KEY_LEFT, data[2] & BUTTON_LEFT);
@@ -272,7 +274,6 @@ static void xpad_irq_in(struct urb *urb)
 
 	input_sync(dev);
 
-exit:
 	retval = usb_submit_urb(urb, GFP_KERNEL);
 	if (retval)
 		dev_err(&urb->dev->dev, "%s - Error %d submitting interrupt urb\n", __func__, retval);
@@ -303,10 +304,8 @@ static void xpad_irq_out(struct urb *urb)
 	default:
 		dev_dbg(dev, "%s - nonzero urb status received: %d\n",
 			__func__, status);
-		goto exit;
 	}
 
-exit:
 	retval = usb_submit_urb(urb, GFP_ATOMIC);
 	if (retval)
 		dev_err(dev, "%s - usb_submit_urb failed with result %d\n",
@@ -326,7 +325,7 @@ static int xpad_init_output(struct usb_interface *intf, struct usb_xpad *xpad)
 					 GFP_KERNEL, &xpad->odata_dma);
 	if (!xpad->odata) {
 		error = -ENOMEM;
-		goto fail1;
+		return error;
 	}
 
 	mutex_init(&xpad->odata_mutex);
@@ -334,7 +333,8 @@ static int xpad_init_output(struct usb_interface *intf, struct usb_xpad *xpad)
 	xpad->irq_out = usb_alloc_urb(0, GFP_KERNEL);
 	if (!xpad->irq_out) {
 		error = -ENOMEM;
-		goto fail2;
+		usb_free_coherent(xpad->udev, XPAD_PKT_LEN, xpad->odata, xpad->odata_dma);
+		return error;
 	}
 
 	/* Xbox One controller has in/out endpoints swapped. */
@@ -348,9 +348,6 @@ static int xpad_init_output(struct usb_interface *intf, struct usb_xpad *xpad)
 	xpad->irq_out->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 
 	return 0;
-
- fail2:	usb_free_coherent(xpad->udev, XPAD_PKT_LEN, xpad->odata, xpad->odata_dma);
- fail1:	return error;
 }
 
 static void xpad_stop_output(struct usb_xpad *xpad)
@@ -430,20 +427,27 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	input_dev = input_allocate_device();
 	if (!xpad || !input_dev) {
 		error = -ENOMEM;
-		goto fail1;
+		input_free_device(input_dev);
+		kfree(xpad);
+		return error;
 	}
 
 	xpad->idata = usb_alloc_coherent(udev, XPAD_PKT_LEN,
 					 GFP_KERNEL, &xpad->idata_dma);
 	if (!xpad->idata) {
 		error = -ENOMEM;
-		goto fail1;
+		input_free_device(input_dev);
+		kfree(xpad);
+		return error;
 	}
 
 	xpad->irq_in = usb_alloc_urb(0, GFP_KERNEL);
 	if (!xpad->irq_in) {
 		error = -ENOMEM;
-		goto fail2;
+		usb_free_coherent(udev, XPAD_PKT_LEN, xpad->idata, xpad->idata_dma);
+		input_free_device(input_dev);
+		kfree(xpad);
+		return error;
 	}
 
 	xpad->udev = udev;
@@ -528,8 +532,13 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 		input_set_capability(input_dev, EV_REL, gamepad_abs[i]);
 
 	error = xpad_init_output(intf, xpad);
-	if (error)
-		goto fail3;
+	if (error){
+		usb_free_urb(xpad->irq_in);
+		usb_free_coherent(udev, XPAD_PKT_LEN, xpad->idata, xpad->idata_dma);
+		input_free_device(input_dev);
+		kfree(xpad);
+		return error;
+	}
 
 	/* Xbox One controller has in/out endpoints swapped. */
 	ep_irq_in = &intf->cur_altsetting->endpoint[ep_irq_in_idx].desc;
@@ -542,26 +551,20 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	xpad->irq_in->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 
 	error = input_register_device(xpad->dev);
-	if (error)
-		goto fail5;
+	if (error){
+		if (input_dev)
+			input_ff_destroy(input_dev);
+		xpad_deinit_output(xpad);
+		usb_free_urb(xpad->irq_in);
+		usb_free_coherent(udev, XPAD_PKT_LEN, xpad->idata, xpad->idata_dma);
+		input_free_device(input_dev);
+		kfree(xpad);
+		return error;
+	}
 
 	usb_set_intfdata(intf, xpad);
 
 	return 0;
-
- fail9:	kfree(xpad->bdata);
- fail7:	input_unregister_device(input_dev);
-	input_dev = NULL;
- fail5:	if (input_dev)
-		input_ff_destroy(input_dev);
- fail4:	xpad_deinit_output(xpad);
- fail3:	usb_free_urb(xpad->irq_in);
- fail2:	usb_free_coherent(udev, XPAD_PKT_LEN, xpad->idata, xpad->idata_dma);
- fail1:	input_free_device(input_dev);
-	kfree(xpad);
-
-	return error;
-
 }
 
 static void xpad_disconnect(struct usb_interface *intf)
