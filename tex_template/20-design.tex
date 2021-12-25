@@ -78,23 +78,16 @@ usb\_driver} определена в /include/linux/usb.h. Данная стру
 	\includegraphics[scale=1]{img/xpad-irq-in.png}
 \end{figure}\par
 Внутри данной функции происходит обработка нажатых на геймпаде клавиш, а также движений стиков.
-Для того, чтобы сообщить о новом событии нажатия кнопки используется функция \textit{input\_report\_key},
-для изменения положения стиков --- \textit{input\_report\_rel}. Эти функции описаны в /include/linux/input.h.
-Ниже на Рисунке \ref{input_report} приведён их вид.
+Для того, чтобы сообщить о новом событии нажатия кнопки,изменения положения использцется функция \textit{do\_action}.
+Ниже на Рисунке \ref{input_report} приведён её вид.
 
 \begin{figure}[h!]
 	\centering
-	\includegraphics[scale=0.9]{img/input-report.png}
-	\caption{Функции \textit{input\_report\_key} и \textit{input\_report\_rel}}
+	\includegraphics[scale=0.9]{img/action-naming.png}
+	\caption{Функция \textit{do\_action}}
 	\label{input_report}
 \end{figure}\par
 \newpage
-
-Видно, что по факту используется функция \textit{input\_event} с различными типами событий(EV\_KEY и EV\_REL).
-\begin{figure}[h!]
-	\centering
-	\includegraphics[scale=0.9]{img/input-event.png}
-\end{figure}\par
 
 Рассмотрим её поля поподробнее:
 \begin{itemize}
