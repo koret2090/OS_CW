@@ -1,4 +1,4 @@
-\section{Технологическая часть}
+\section{Технологический раздел}
 
 \subsection{Выбор языка и среды программирования}
 В качестве языка программирования для выполнения поставленной
@@ -7,7 +7,7 @@
 компилятор gcc. Средой разработки был выбран текстовый редактор
 Visual Studio Code.
 
-\subsection{Описание ключевых моментов реализации}
+\subsection{Реализация структур и алгоритмов}
 Основной структурой USB драйвера является \textit{struct usb\_driver}. Данная структура представлена в Листинге 1.
 
 \begin{lstlisting}[caption=Структура usb\_driver]
@@ -19,7 +19,28 @@ Visual Studio Code.
 	};
 \end{lstlisting}
 
-Локальной системной структурой является \textit{usb\_xpad}. Данная структура показана в Листинге 2.
+Ниже приведен Листинг 2 реализации \textit{id\_table} и связанной с ней структуры.
+\begin{lstlisting}[caption=Структуры xpad\_device и функция xpad\_table]
+	static const struct xpad_device {
+		u16 idVendor;
+		u16 idProduct;
+		char *name;
+		u8 mapping;
+		u8 xtype;
+	} xpad_device[] = {
+		{ 0x046d, 0xc21d, "Logitech Gamepad F310", 0, XTYPE_XBOX360 },
+		{ 0x046d, 0xc21e, "Logitech Gamepad F510", 0, XTYPE_XBOX360 },
+		{ 0x046d, 0xc21f, "Logitech Gamepad F710", 0, XTYPE_XBOX360 }
+	};
+	
+	static struct usb_device_id xpad_table[] = {
+		{ USB_INTERFACE_INFO('X', 'B', 0) },	/* X-Box USB-IF not approved class */
+		XPAD_XBOX360_VENDOR(0x046d),		/* Logitech X-Box 360 style controllers */
+		{ }
+	};
+\end{lstlisting}
+
+Локальной системной структурой является \textit{usb\_xpad}. Данная структура показана в Листинге 3.
 
 \begin{lstlisting}[caption=Структура usb\_xpad]
 	struct usb_xpad {
@@ -47,7 +68,7 @@ Visual Studio Code.
 	};
 \end{lstlisting}
 
-Ниже в Листинге 3 представлена функция инициализации при загрузке
+Ниже в Листинге 4 представлена функция инициализации при загрузке
 
 драйвера \textit{xpad\_probe}.
 \begin{lstlisting}[caption=Функция xpad\_probe]
@@ -212,7 +233,7 @@ Visual Studio Code.
 	}
 \end{lstlisting}
 
-Ниже в Листинге 4 показана функция \textit{xpad\_open}, она используется при подключении геймпада.
+Ниже в Листинге 5 показана функция \textit{xpad\_open}, она используется при подключении геймпада.
  \begin{lstlisting}[caption=Функция xpad\_open]
  	static int xpad_open(struct input_dev *dev)
  	{
@@ -228,7 +249,7 @@ Visual Studio Code.
  \end{lstlisting}
 
 Назначение максимальных значений координат стиков, крестовины производится в функции \textit{xpad\_set\_up\_abs}. 
-Данная функция представлена в Листинге 5.
+Данная функция представлена в Листинге 6.
 \begin{lstlisting}[caption=Функция xpad\_set\_up\_abs]
 	static void xpad_set_up_abs(struct input_dev *input_dev, signed short abs)
 	{
@@ -255,7 +276,7 @@ Visual Studio Code.
 \end{lstlisting}
 
 Установка обрабатываемых типов событий производится в этих строках в функции \textit{xpad\_probe}.
-Ниже в Листинге 6 представлены эти строки.
+Ниже в Листинге 7 представлены эти строки.
  \begin{lstlisting}[caption=Установка обрабатываемых типов событий]
 	for (i = 0; gamepad_buttons[i] >= 0; i++)
 		input_set_capability(input_dev, EV_KEY, gamepad_buttons[i]);
@@ -267,7 +288,7 @@ Visual Studio Code.
 		input_set_capability(input_dev, EV_REL, gamepad_abs[i]);
 \end{lstlisting}
 
-Ниже в Листинге 7 представлена инициализация функций
+Ниже в Листинге 8 представлена инициализация функций
 
 выхода в  \textit{xpad\_init\_output}.
  \begin{lstlisting}[caption=Инициализация функций выхода]
@@ -311,51 +332,71 @@ Visual Studio Code.
 \end{lstlisting}
 
 Обработка нажатий кнопок и движений стиков происходит в функции \textit{xpad\_irq\_in}.
-Данная функция представлена в Листинге 8.
+Данная функция представлена в Листинге 9.
  \begin{lstlisting}[caption=Функция xpad\_irq\_in]
-	static int xpad_init_output(struct usb_interface *intf, struct usb_xpad *xpad)
-	{
-		printk("+ init output");
-		struct usb_endpoint_descriptor *ep_irq_out;
-		int ep_irq_out_idx;
-		int error;
-		
-		if (xpad->xtype == XTYPE_UNKNOWN)
-		return 0;
-		
-		xpad->odata = usb_alloc_coherent(xpad->udev, XPAD_PKT_LEN,
-		GFP_KERNEL, &xpad->odata_dma);
-		if (!xpad->odata) {
-			error = -ENOMEM;
-			return error;
-		}
-		
-		mutex_init(&xpad->odata_mutex);
-		
-		xpad->irq_out = usb_alloc_urb(0, GFP_KERNEL);
-		if (!xpad->irq_out) {
-			error = -ENOMEM;
-			usb_free_coherent(xpad->udev, XPAD_PKT_LEN, xpad->odata, xpad->odata_dma);
-			return error;
-		}
-		
-		ep_irq_out = &intf->cur_altsetting->endpoint[ep_irq_out_idx].desc;
-		
-		usb_fill_int_urb(xpad->irq_out, xpad->udev,
-		usb_sndintpipe(xpad->udev, ep_irq_out->bEndpointAddress),
-		xpad->odata, XPAD_PKT_LEN,
-		xpad_irq_out, xpad, ep_irq_out->bInterval);
-		xpad->irq_out->transfer_dma = xpad->odata_dma;
-		xpad->irq_out->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
-		
-		return 0;
+static void xpad_irq_in(struct urb *urb)
+{
+	printk("+ irq in");
+	unsigned char *data = urb->transfer_buffer;
+	struct usb_xpad *xpad = urb->context;
+	struct input_dev *dev = xpad->dev;
+	
+	int retval;
+	
+	switch (urb->status) {
+		case 0:
+		/* success */
+		break;
+		case -ECONNRESET:
+		case -ENOENT:
+		case -ESHUTDOWN:
+		/* this urb is terminated, clean up */
+		printk("%s - urb shutting down with status: %d", __func__, urb->status);
+		return;
+		default:
+		printk("%s - nonzero urb status received: %d", __func__, urb->status);
+		retval = usb_submit_urb(urb, GFP_KERNEL);
+		if (retval)
+		dev_err(&urb->dev->dev, "%s - Error %d submitting interrupt urb\n", __func__, retval);
+		return;
 	}
+	
+	do_action(dev, EV_KEY, KEY_LEFT, data[2] & BUTTON_LEFT);
+	do_action(dev, EV_KEY, KEY_RIGHT, data[2] & BUTTON_RIGHT);
+	do_action(dev, EV_KEY, KEY_UP, data[2] & BUTTON_UP);
+	do_action(dev, EV_KEY, KEY_DOWN, data[2] & BUTTON_DOWN);
+	
+	do_action(dev, EV_KEY, BTN_LEFT, data[3] & BUTTON_A);
+	do_action(dev, EV_KEY, BTN_RIGHT, data[3] & BUTTON_B);
+	
+	do_action(dev,EV_KEY, KEY_LEFTSHIFT, data[3] & BUTTON_L1);
+	do_action(dev, EV_KEY, KEY_ENTER, data[3] & BUTTON_R1);
+	
+	do_action(dev,EV_KEY, KEY_ESC,  data[2] & BUTTON_START);
+	do_action(dev, EV_KEY, KEY_LEFTCTRL, data[2] & BUTTON_SELECT);
+	do_action(dev, EV_KEY, KEY_LEFTALT, data[3] & BUTTON_MODE);
+	
+	do_action(dev, EV_KEY, KEY_PAGEDOWN, data[2] & BUTTON_L3);
+	do_action(dev, EV_KEY, KEY_PAGEUP, data[2] & BUTTON_R3);
+	
+	do_action(dev, EV_REL, REL_X, (__s16) le16_to_cpup((__le16 *)(data + 6))/2048);
+	do_action(dev, EV_REL, REL_Y, ~(__s16) le16_to_cpup((__le16 *)(data + 8))/2048);
+	
+	do_action(dev, EV_REL, REL_HWHEEL, (__s16) le16_to_cpup((__le16 *)(data + 10))/8192);
+	do_action(dev, EV_REL, ABS_WHEEL, ~(__s16) le16_to_cpup((__le16 *)(data + 12))/8192);
+	
+	input_sync(dev);
+	
+	retval = usb_submit_urb(urb, GFP_KERNEL);
+	if (retval)
+	dev_err(&urb->dev->dev, "%s - Error %d submitting interrupt urb\n", __func__, retval);
+}
 \end{lstlisting}
 
 Отключение устройства производится при использовании 
 
 функции \textit{xpad\_disconnect}.
-Данная функция представлена в Листинге 9.
+Данная функция представлена в Листинге 10.
 
 \begin{lstlisting}[caption=Функция xpad\_disconnect]
 	static void xpad_disconnect(struct usb_interface *intf)
@@ -378,7 +419,7 @@ Visual Studio Code.
 \end{lstlisting}
 
 Выгрузка драйвера происходит в функции \textit{xpad\_close}.
-Данная функция представлена в Листинге 10.
+Данная функция представлена в Листинге 11.
 
 \begin{lstlisting}[caption=Функция xpad\_close]
 	static void xpad_close(struct input_dev *dev)
@@ -390,56 +431,30 @@ Visual Studio Code.
 \end{lstlisting}
 
 \subsection{Makefile}
-В Листинге 11 приведено содержимое Makefile, содержащего набор
+В Листинге 12 приведено содержимое Makefile, содержащего набор
 инструкций, используемых утилитой make в инструментарии автоматизации
 сборки. 
 
 \begin{lstlisting}[caption=Makefile]
-KBUILD_EXTRA_SYMBOLS = $(shell pwd)/Module.symverscd
-ifneq ($(KERNELRELEASE),)
-	obj-m := myxpad.o vms.o
-else
+	KBUILD_EXTRA_SYMBOLS = $(shell pwd)/Module.symverscd
+	ifneq ($(KERNELRELEASE),)
+	obj-m := myxpad.o
+	else
 	CURRENT = $(shell uname -r)
 	KDIR = /lib/modules/$(CURRENT)/build
 	PWD = $(shell pwd)
-
-default:
+	
+	default:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
 	make cleanHalf
-
-cleanHalf:
+	
+	cleanHalf:
 	rm -rf *.o *~ *.mod *.mod.c Module.* *.order  .tmp_versions
-
-clean:
+	
+	clean:
 	make cleanHalf
 	rm -rf *.ko
-
-endif
+	
+	endif
 \end{lstlisting}
-
-\subsection{Установка драйвера}
-Для корректного функционирования разработанного ПО необходимо
-выполнить установку реализованного драйвера. Для этого сперва нужно выгрузить драйвер геймпада, что загружен по умолчанию ---
-\textit{sudo rmmod xpad}. Далее уже загрузить данное ПО --- \textit{sudo insmod myxpad.ko}. На Рисунке \ref{sudo} показан данный процесс.
-
-\begin{figure}[h!]
-	\centering
-	\includegraphics[scale=0.9]{img/sudo.jpg}
-	\caption{Установка драйвера}
-	\label{sudo}
-\end{figure}\par
-
-\subsection{Результат выполнения}
-На Рисунке \ref{dmesg} показан вывод программы.
-\begin{figure}[h!]
-	\centering
-	\includegraphics[scale=0.9]{img/ex1.jpg}
-	\caption{Вывод программы}
-	\label{dmesg}
-\end{figure}\par
-
-
-
-
-
 \pagebreak

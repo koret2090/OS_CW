@@ -1,17 +1,32 @@
-\section{Конструкторская часть}
+\section{Конструкторский раздел}
 
 \subsection{Требования к программному обеспечению}
 Программное обеспечение состоит из драйвера, реализованного в виде
 загружаемого модуля ядра, который посредством считывания и обрабатывания информации клавиш и стиков геймпада
 реализует функционал обычной компьютерной мыши.
 
-\subsection{Реализация драйвера}
-В основе данного ПО лежит реализация исходного USB драйвера геймпада.
-Его работа заключается в регистрации своего объекта драйвера с USB
-подсистемой.
+\subsection{IDEF0}
+Ниже на Рисунках \ref{idef00} и \ref{idef01} представлена IDEF0 диаграмма.
 
-\subsection{Регистрация драйвера}
-Для регистрации драйвера в системе имеется структура \textit{usb\_driver}.\textit{struct
+\begin{figure}[h!]
+	\centering
+	\includegraphics[scale=0.45]{img/idef00.png}
+	\caption{IDEF0 уровня 0}
+	\label{idef00}
+\end{figure}
+\newpage
+\begin{figure}[h!]
+	\centering
+	\includegraphics[scale=0.45]{img/idef01.png}
+	\caption{IDEF0 уровня 1}
+	\label{idef01}
+\end{figure}\par
+
+
+\subsection{Точки входа драйвера}
+Для регистрации драйвера в системе имеется структура \textit{usb\_driver}.
+
+\textit{struct
 usb\_driver} определена в /include/linux/usb.h. Данная структура представлена ниже на Рисунке \ref{USB-driver}. 
 
 \begin{figure}[h!]
@@ -20,7 +35,7 @@ usb\_driver} определена в /include/linux/usb.h. Данная стру
 	\caption{Структура usb\_driver}
 	\label{USB-driver}
 \end{figure}\par
-
+\newpage
 Для регистрации USB драйвера мыши следует рассматривать
 следующие основные поля структуры:
 \begin{itemize}
@@ -34,6 +49,15 @@ usb\_driver} определена в /include/linux/usb.h. Данная стру
 	подключения устройств. В случае ее отсутствия, функция probe не
 	сможет быть вызвана.
 \end{itemize}\par
+Ниже на Рисунке \ref{id-table} представлен пример \textit{id\_table} --- \textit{xpad\_table}.
+
+\begin{figure}[h!]
+	\centering
+	\includegraphics[scale=0.8]{img/id-table.png}
+	\caption{Пример id\_table}
+	\label{id-table}
+\end{figure}\par
+
 После инициализации структуры \textit{usb\_device\_id} выполняется вызов
 макроса \textit{MODULE\_DEVICE\_TABLE}. При компиляции процесс извлекает
 информацию из всех драйверов и инициализирует таблицу устройств. При
@@ -41,7 +65,7 @@ usb\_driver} определена в /include/linux/usb.h. Данная стру
 записи, соответствующей идентификатору устройства. В случае нахождения
 такой записи, выполняется инициализация и загрузка модуля.
 
-\subsection{Подготовка к эмуляции событий мыши}
+\subsection{Алгоритмы эмуляции событий мыши}
 Чтобы пометить устройство, как способное генерировать определенные события, нужно 
 применить функцию \textit{input\_set\_capability}. Данная функция определена в /include/linux/usb.h.
 Ниже на Рисунке \ref{input_set} представлен её вид.
@@ -87,7 +111,6 @@ usb\_driver} определена в /include/linux/usb.h. Данная стру
 	\caption{Функция \textit{do\_action}}
 	\label{input_report}
 \end{figure}\par
-\newpage
 
 Рассмотрим её поля поподробнее:
 \begin{itemize}
@@ -103,16 +126,16 @@ usb\_driver} определена в /include/linux/usb.h. Данная стру
 
 \begin{figure}[h!]
 	\centering
-	\includegraphics[scale=1.5]{img/driver-work1.pdf}
-	\caption{Схема алгоритма работы драйвера геймпада}
+	\includegraphics[scale=1.4]{img/driver-work1.pdf}
+	\caption{Пример работы драйвера геймпада}
 	\label{driver-work1}
 \end{figure}
 \newpage
 
 \begin{figure}[h!]
 	\centering
-	\includegraphics[scale=1.5]{img/driver-work2.pdf}
-	\caption{Схема алгоритма работы драйвера геймпада}
+	\includegraphics[scale=1.4]{img/driver-work2.pdf}
+	\caption{Пример работы драйвера геймпада}
 	\label{driver-work2}
 \end{figure}
 

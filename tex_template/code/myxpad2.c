@@ -61,17 +61,6 @@ static bool sticks_to_null;
 module_param(sticks_to_null, bool, S_IRUGO);
 MODULE_PARM_DESC(sticks_to_null, "Do not map sticks at all for unknown pads");
 
-static const struct xpad_device {
-	u16 idVendor;
-	u16 idProduct;
-	char *name;
-	u8 mapping;
-	u8 xtype;
-} xpad_device[] = {
-	{ 0x046d, 0xc21d, "Logitech Gamepad F310", 0, XTYPE_XBOX360 },
-	{ 0x046d, 0xc21e, "Logitech Gamepad F510", 0, XTYPE_XBOX360 },
-	{ 0x046d, 0xc21f, "Logitech Gamepad F710", 0, XTYPE_XBOX360 }
-};
 
 /* buttons shared with xbox and xbox360 */
 static const signed short xpad_common_btn[] = {
@@ -175,6 +164,18 @@ static const signed short gamepad_abs[] = {
 	.bInterfaceProtocol = (pr)
 #define XPAD_XBOXONE_VENDOR(vend) \
 	{ XPAD_XBOXONE_VENDOR_PROTOCOL(vend, 208) }
+	
+static const struct xpad_device {
+	u16 idVendor;
+	u16 idProduct;
+	char *name;
+	u8 mapping;
+	u8 xtype;
+} xpad_device[] = {
+	{ 0x046d, 0xc21d, "Logitech Gamepad F310", 0, XTYPE_XBOX360 },
+	{ 0x046d, 0xc21e, "Logitech Gamepad F510", 0, XTYPE_XBOX360 },
+	{ 0x046d, 0xc21f, "Logitech Gamepad F710", 0, XTYPE_XBOX360 }
+};
 
 static struct usb_device_id xpad_table[] = {
 	{ USB_INTERFACE_INFO('X', 'B', 0) },	/* X-Box USB-IF not approved class */
@@ -247,66 +248,26 @@ static void xpad_irq_in(struct urb *urb)
 			return;
 	}
 
-	//input_report_key(dev, KEY_LEFT, data[2] & BUTTON_LEFT);
-	//input_report_key(dev, KEY_RIGHT, data[2] & BUTTON_RIGHT);
-	//input_report_key(dev, KEY_UP, data[2] & BUTTON_UP);
-	//input_report_key(dev, KEY_DOWN, data[2] & BUTTON_DOWN);
-
 	do_action(dev, EV_KEY, KEY_LEFT, data[2] & BUTTON_LEFT);
 	do_action(dev, EV_KEY, KEY_RIGHT, data[2] & BUTTON_RIGHT);
 	do_action(dev, EV_KEY, KEY_UP, data[2] & BUTTON_UP);
 	do_action(dev, EV_KEY, KEY_DOWN, data[2] & BUTTON_DOWN);
 	
-
-	//input_report_key(dev, BTN_LEFT,  data[3] & BUTTON_A);
-	//input_report_key(dev, BTN_RIGHT,  data[3] & BUTTON_B);
-	////input_report_key(dev, BTN_MIDDLE,  data[3] & BTN_X);
-	////input_report_key(dev, BTN_SIDE,  data[3] & BTN_Y);
-	//input_report_key(dev, KEY_LEFTSHIFT, data[3] & BUTTON_L1);
-	//input_report_key(dev, KEY_ENTER, data[3] & BUTTON_R1);
-
 	do_action(dev, EV_KEY, BTN_LEFT, data[3] & BUTTON_A);
 	do_action(dev, EV_KEY, BTN_RIGHT, data[3] & BUTTON_B);
 
 	do_action(dev,EV_KEY, KEY_LEFTSHIFT, data[3] & BUTTON_L1);
 	do_action(dev, EV_KEY, KEY_ENTER, data[3] & BUTTON_R1);
 
-	/* start/back buttons */
-	//input_report_key(dev, KEY_ESC,  data[2] & BUTTON_START);
-	//input_report_key(dev, KEY_LEFTCTRL, data[2] & BUTTON_SELECT);
-	//input_report_key(dev, KEY_LEFTALT, data[3] & BUTTON_MODE);
-
 	do_action(dev,EV_KEY, KEY_ESC,  data[2] & BUTTON_START);
 	do_action(dev, EV_KEY, KEY_LEFTCTRL, data[2] & BUTTON_SELECT);
 	do_action(dev, EV_KEY, KEY_LEFTALT, data[3] & BUTTON_MODE);
 
-
-
-	/* stick press left/right */
-	//input_report_key(dev, KEY_PAGEDOWN, data[2] & BUTTON_L3);
-	//input_report_key(dev, KEY_PAGEUP, data[2] & BUTTON_R3);
-
 	do_action(dev, EV_KEY, KEY_PAGEDOWN, data[2] & BUTTON_L3);
 	do_action(dev, EV_KEY, KEY_PAGEUP, data[2] & BUTTON_R3);
 
-	//digital bumpers
-	// input_report_key(dev, BTN_TL2, data[4]);
-	// input_report_key(dev, BTN_TR2, data[5]);
-
-	//analog bumpers
-	// input_report_abs(dev, ABS_VOLUME, data[4]);
-	// input_report_abs(dev, ABS_VOLUME, data[5]);
-
-	/* left stick */
-	//input_report_rel(dev, REL_X, (__s16) le16_to_cpup((__le16 *)(data + 6))/2048);
-	//input_report_rel(dev, REL_Y, ~(__s16) le16_to_cpup((__le16 *)(data + 8))/2048);
-
 	do_action(dev, EV_REL, REL_X, (__s16) le16_to_cpup((__le16 *)(data + 6))/2048);
 	do_action(dev, EV_REL, REL_Y, ~(__s16) le16_to_cpup((__le16 *)(data + 8))/2048);
-
-	/* right stick */
-	//input_report_rel(dev, REL_HWHEEL, (__s16) le16_to_cpup((__le16 *)(data + 10))/8192);
-	//input_report_rel(dev, ABS_WHEEL, ~(__s16) le16_to_cpup((__le16 *)(data + 12))/8192);
 
 	do_action(dev, EV_REL, REL_HWHEEL, (__s16) le16_to_cpup((__le16 *)(data + 10))/8192);
 	do_action(dev, EV_REL, ABS_WHEEL, ~(__s16) le16_to_cpup((__le16 *)(data + 12))/8192);
